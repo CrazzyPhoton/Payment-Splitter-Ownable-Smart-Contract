@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-/** 
- * @dev OpenZeppelin's Payment Splitter Contract has been made Ownable.
- * Release function is now onlyOwner.
- * _addPayee function is now public onlyOwner. So you can now add a new payee even after the contract is deployed.
- * A new _removePayee function has been implemented.
- * It removes a payee at a particular index in the array and also deletes the shares that the payee owes.
- * It takes parameters - uint256 index, address account, uint256 shares_ .
- * Please test it before deploying or using for production.
- * Please change the Name of this contract, flatten it and deploy this contract.
- */
-
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -20,6 +9,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract PaymentSplitterModified is Context, Ownable {
     event PayeeAdded(address account, uint256 shares);
+    event PayeeRemoved(address account, uint256 shares);
     event PaymentReleased(address to, uint256 amount);
     event ERC20PaymentReleased(IERC20 indexed token, address to, uint256 amount);
     event PaymentReceived(address from, uint256 amount);
@@ -34,18 +24,55 @@ contract PaymentSplitterModified is Context, Ownable {
     mapping(IERC20 => uint256) private _erc20TotalReleased;
     mapping(IERC20 => mapping(address => uint256)) private _erc20Released;
 
-    constructor(address[] memory payees, uint256[] memory shares_) payable {
+    // EXTERNAL FUNCTIONS //
+
+    receive() external payable virtual {
+        emit PaymentReceived(_msgSender(), msg.value);
+    }
+
+    // WRITE CONTRACT PUBLIC FUNCTIONS //
+    // SMART CONTRACT OWNER ONLY FUNCTIONS //
+
+    function release(address payable account) public onlyOwner {
+        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
+        uint256 payment = releasable(account);
+        require(payment != 0, "PaymentSplitter: account is not due payment");
+        _released[account] += payment;
+        _totalReleased += payment;
+        Address.sendValue(account, payment);
+        emit PaymentReleased(account, payment);
+    }
+
+    function releaseERC20(IERC20 token, address account) public onlyOwner {
+        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
+        uint256 payment = releasableERC20(token, account);
+        require(payment != 0, "PaymentSplitter: account is not due payment");
+        _erc20Released[token][account] += payment;
+        _erc20TotalReleased[token] += payment;
+        SafeERC20.safeTransfer(token, account, payment);
+        emit ERC20PaymentReleased(token, account, payment);
+    }
+
+    function addNewPayees(address[] calldata payees, uint256[] calldata shares_) public onlyOwner {
         require(payees.length == shares_.length, "PaymentSplitter: payees and shares length mismatch");
         require(payees.length > 0, "PaymentSplitter: no payees");
-
+        require(_payees.length == 0, "PaymentSplitter: please remove all the existing payees before adding new payees");
         for (uint256 i = 0; i < payees.length; i++) {
             _addPayee(payees[i], shares_[i]);
         }
     }
 
-    receive() external payable virtual {
-        emit PaymentReceived(_msgSender(), msg.value);
+    function removeAllPayees(address[] calldata payees, uint256[] calldata shares_) public onlyOwner {
+        require(_payees.length > 0, "PaymentSplitter: payees don't exist");
+        require(_payees.length == payees.length, "Payment Splitter: payees and exisitng payees length mismatch");
+        require(payees.length == shares_.length, "PaymentSplitter: payees and shares length mismatch");
+        for (uint256 i = 0; i < payees.length; i++) {
+            _removePayee(payees[i], shares_[i]);
+        }
     }
+
+    // READ CONTRACT FUNCTIONS //
+    // GETTER PUBLIC FUNCTIONS //
 
     function totalShares() public view returns (uint256) {
         return _totalShares;
@@ -67,7 +94,7 @@ contract PaymentSplitterModified is Context, Ownable {
         return _released[account];
     }
 
-    function released(IERC20 token, address account) public view returns (uint256) {
+    function releasedERC20(IERC20 token, address account) public view returns (uint256) {
         return _erc20Released[token][account];
     }
 
@@ -80,63 +107,36 @@ contract PaymentSplitterModified is Context, Ownable {
         return _pendingPayment(account, totalReceived, released(account));
     }
 
-    function releasable(IERC20 token, address account) public view returns (uint256) {
+    function releasableERC20(IERC20 token, address account) public view returns (uint256) {
         uint256 totalReceived = token.balanceOf(address(this)) + totalReleased(token);
-        return _pendingPayment(account, totalReceived, released(token, account));
+        return _pendingPayment(account, totalReceived, releasedERC20(token, account));
     }
 
-    function release(address payable account) public onlyOwner {
-        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
-
-        uint256 payment = releasable(account);
-
-        require(payment != 0, "PaymentSplitter: account is not due payment");
-
-        _released[account] += payment;
-        _totalReleased += payment;
-
-        Address.sendValue(account, payment);
-        emit PaymentReleased(account, payment);
-    }
-
-    function release(IERC20 token, address account) public onlyOwner {
-        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
-
-        uint256 payment = releasable(token, account);
-
-        require(payment != 0, "PaymentSplitter: account is not due payment");
-
-        _erc20Released[token][account] += payment;
-        _erc20TotalReleased[token] += payment;
-
-        SafeERC20.safeTransfer(token, account, payment);
-        emit ERC20PaymentReleased(token, account, payment);
-    }
-
-    function _pendingPayment(
-        address account,
-        uint256 totalReceived,
-        uint256 alreadyReleased
-    ) private view returns (uint256) {
-        return (totalReceived * _shares[account]) / _totalShares - alreadyReleased;
-    }
+    // INTERNAL FUNCTIONS //
     
-    function _addPayee(address account, uint256 shares_) public onlyOwner {
+    function _addPayee(address account, uint256 shares_) internal {
         require(account != address(0), "PaymentSplitter: account is the zero address");
         require(shares_ > 0, "PaymentSplitter: shares are 0");
         require(_shares[account] == 0, "PaymentSplitter: account already has shares");
-
         _payees.push(account);
         _shares[account] = shares_;
         _totalShares = _totalShares + shares_;
         emit PayeeAdded(account, shares_);
     }
     
-    function _removePayee(uint256 index, address account, uint256 shares_) public onlyOwner {
-        require(_shares[account] == shares_, "Enter exact shares");
-        _payees[index] = _payees[_payees.length - 1];
+    function _removePayee(address account, uint256 shares_) internal {
+        require(_shares[account] == shares_, "Payment Splitter: shares are incorrect");
+        require(_payees[0] == account, "Payment Splitter: payee address is incorrect");
+        _payees[0] = _payees[_payees.length - 1];
         _payees.pop();
         delete _shares[account];
         _totalShares = _totalShares - shares_;
+        emit PayeeRemoved(account, shares_);
+    }
+
+    // PRIVATE FUNCTIONS //
+
+    function _pendingPayment(address account, uint256 totalReceived, uint256 alreadyReleased) private view returns (uint256) {
+        return (totalReceived * _shares[account]) / _totalShares - alreadyReleased;
     }
 }
