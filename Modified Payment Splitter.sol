@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract PaymentSplitterModified is Context, Ownable {
+contract PaymentSplitter is Context, Ownable {
     event PayeeAdded(address account, uint256 shares);
     event PayeeRemoved(address account, uint256 shares);
     event PaymentReleased(address to, uint256 amount);
@@ -33,26 +33,17 @@ contract PaymentSplitterModified is Context, Ownable {
     // WRITE CONTRACT PUBLIC FUNCTIONS //
     // SMART CONTRACT OWNER ONLY FUNCTIONS //
 
-    function release(address payable account) public onlyOwner {
-        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
-        uint256 payment = releasable(account);
-        require(payment != 0, "PaymentSplitter: account is not due payment");
-        _released[account] += payment;
-        _totalReleased += payment;
-        Address.sendValue(account, payment);
-        emit PaymentReleased(account, payment);
-    }
-
-    function releaseERC20(IERC20 token, address account) public onlyOwner {
-        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
-        uint256 payment = releasableERC20(token, account);
-        require(payment != 0, "PaymentSplitter: account is not due payment");
-        _erc20Released[token][account] += payment;
-        _erc20TotalReleased[token] += payment;
-        SafeERC20.safeTransfer(token, account, payment);
-        emit ERC20PaymentReleased(token, account, payment);
-    }
-
+    /**
+     * @notice Function adds new payees and their shares,
+     * payees addresses are to be wrote in an array form like this ["address1","address2","address3"] and
+     * shares are also to be wrote in an array form like this [share1,share2,share3]
+     * such that address1 will share1, address2 will receive share2 and address3 will receive share3.
+     * If you want to add more payees afterwards you will have to remove all the existing payees before,
+     * use the removeAllPayees function for this.
+     * Individual share must be an integer. 
+     * Sum of all shares must be a power of 10 which is 100,1000,10000,... 
+     * such that shares are distributed properly according to the expected share percentage.
+     */
     function addNewPayees(address[] calldata payees, uint256[] calldata shares_) public onlyOwner {
         require(payees.length == shares_.length, "PaymentSplitter: payees and shares length mismatch");
         require(payees.length > 0, "PaymentSplitter: no payees");
@@ -62,12 +53,43 @@ contract PaymentSplitterModified is Context, Ownable {
         }
     }
 
+    /**
+     * @notice Function removes all the existing payees and their shares,
+     * payees addresses are to be wrote in an array form like this ["address1","address2","address3"] and
+     * shares are also to be wrote in an array form like this [share1,share2,share3].
+     * Enter all the exisitng payees in the array.
+     * Entered shares must be the exact shares owed by the payees.
+     * Enter the array of payees in the payees field and the array of shares in the shares_ field.
+     */
     function removeAllPayees(address[] calldata payees, uint256[] calldata shares_) public onlyOwner {
         require(_payees.length > 0, "PaymentSplitter: payees don't exist");
         require(_payees.length == payees.length, "Payment Splitter: payees and exisitng payees length mismatch");
         require(payees.length == shares_.length, "PaymentSplitter: payees and shares length mismatch");
         for (uint256 i = 0; i < payees.length; i++) {
             _removePayee(payees[i], shares_[i]);
+        }
+    }
+
+    /**
+     * @notice Function withdraws the ETH accumulated in the smart contract to the payees according to their shares.
+     * Function can withdraw shares owed by one or more payees.
+     * Payees addresses are to be wrote in an array form like this ["address1","address2","address3"].
+     * Enter the array of payees in payees field.
+     */
+    function release(address[] calldata payees) public onlyOwner {
+        for (uint256 i = 0; i < payees.length; i++) {
+            _release(payable(payees[i]));
+        }
+    }
+
+    /**
+     * @notice Function withdraws the accumulated ERC20 tokens in the smart contract to the payees according to their shares.
+     * Function can withdraw shares owed by one or more payees.
+     * Enter the ERC20 token contract address in the token field and the payees addresses in an array form like this ["address1","address2","address3"] in the payees field.
+     */
+    function releaseERC20(IERC20 token, address[] calldata payees) public onlyOwner {
+        for (uint256 i = 0; i < payees.length; i++) {
+            _releaseERC20(token, payees[i]);
         }
     }
 
@@ -82,7 +104,7 @@ contract PaymentSplitterModified is Context, Ownable {
         return _totalReleased;
     }
 
-    function totalReleased(IERC20 token) public view returns (uint256) {
+    function totalReleasedERC20(IERC20 token) public view returns (uint256) {
         return _erc20TotalReleased[token];
     }
 
@@ -108,7 +130,7 @@ contract PaymentSplitterModified is Context, Ownable {
     }
 
     function releasableERC20(IERC20 token, address account) public view returns (uint256) {
-        uint256 totalReceived = token.balanceOf(address(this)) + totalReleased(token);
+        uint256 totalReceived = token.balanceOf(address(this)) + totalReleasedERC20(token);
         return _pendingPayment(account, totalReceived, releasedERC20(token, account));
     }
 
@@ -125,13 +147,33 @@ contract PaymentSplitterModified is Context, Ownable {
     }
     
     function _removePayee(address account, uint256 shares_) internal {
-        require(_shares[account] == shares_, "Payment Splitter: shares are incorrect");
-        require(_payees[0] == account, "Payment Splitter: payee address is incorrect");
+        require(_shares[account] == shares_, "PaymentSplitter: shares are incorrect");
+        require(_payees[0] == account, "PaymentSplitter: payee address is incorrect");
         _payees[0] = _payees[_payees.length - 1];
         _payees.pop();
         delete _shares[account];
         _totalShares = _totalShares - shares_;
         emit PayeeRemoved(account, shares_);
+    }
+
+    function _release(address payable account) internal {
+        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
+        uint256 payment = releasable(account);
+        require(payment != 0, "PaymentSplitter: account is not due payment");
+        _released[account] += payment;
+        _totalReleased += payment;
+        Address.sendValue(account, payment);
+        emit PaymentReleased(account, payment);
+    }
+
+    function _releaseERC20(IERC20 token, address account) internal {
+        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
+        uint256 payment = releasableERC20(token, account);
+        require(payment != 0, "PaymentSplitter: account is not due payment");
+        _erc20Released[token][account] += payment;
+        _erc20TotalReleased[token] += payment;
+        SafeERC20.safeTransfer(token, account, payment);
+        emit ERC20PaymentReleased(token, account, payment);
     }
 
     // PRIVATE FUNCTIONS //
