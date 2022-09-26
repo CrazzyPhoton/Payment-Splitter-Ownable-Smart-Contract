@@ -63,7 +63,7 @@ contract PaymentSplitter is Context, Ownable {
      */
     function removeAllPayees(address[] calldata payees, uint256[] calldata shares_) public onlyOwner {
         require(_payees.length > 0, "PaymentSplitter: payees don't exist");
-        require(_payees.length == payees.length, "Payment Splitter: payees and exisitng payees length mismatch");
+        require(_payees.length == payees.length, "PaymentSplitter: payees and exisitng payees length mismatch");
         require(payees.length == shares_.length, "PaymentSplitter: payees and shares length mismatch");
         for (uint256 i = 0; i < payees.length; i++) {
             _removePayee(payees[i], shares_[i]);
