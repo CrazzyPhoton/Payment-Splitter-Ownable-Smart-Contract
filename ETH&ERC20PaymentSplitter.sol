@@ -106,10 +106,7 @@ contract PaymentSplitter is Context, Ownable {
                 _erc20TotalReleased[_erc20TokensWithdrawn[i]] = 0;
             }
         }
-        for (uint256 i = 0; i < numberOfExistingPayees; i++) {
-            _payees[0] = _payees[_payees.length - 1];
-            _payees.pop();
-        }
+        delete _payees;
     }
 
     /**
