@@ -284,11 +284,11 @@ contract PaymentSplitter is Context, Ownable {
     }
 
     /**
-     * @notice Function queries and returns the contract addresses of all the types of ERC20 tokens withdrawed from the smart contract.
+     * @notice Function queries and returns the contract addresses of all the types of ERC20 tokens withdrawn from the smart contract.
      * Click on query to execute the function.
      */
     function withdrawnERC20Tokens() public view returns (IERC20[] memory erc20TokenAddresses) {
-        require(_erc20TokensWithdrawn.length > 0, "PaymentSplitter: no erc20 tokens withdrawed");
+        require(_erc20TokensWithdrawn.length > 0, "PaymentSplitter: no erc20 tokens withdrawn");
         erc20TokenAddresses = new IERC20[](_erc20TokensWithdrawn.length);
         for (uint256 i = 0; i < _erc20TokensWithdrawn.length; i++) {
             erc20TokenAddresses[i] = _erc20TokensWithdrawn[i];
