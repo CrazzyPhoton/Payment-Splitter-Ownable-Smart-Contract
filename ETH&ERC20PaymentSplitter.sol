@@ -92,11 +92,11 @@ contract PaymentSplitter is Context, Ownable {
         require(_payees.length > 0, "PaymentSplitter: payees don't exist");
         uint256 numberOfExistingPayees = _payees.length;
         for (uint256 i = 0; i < numberOfExistingPayees; i++) {
-            _totalShares = _totalShares - _shares[_payees[i]];
             emit PayeeRemoved(_payees[i], _shares[_payees[i]]);
             delete _shares[_payees[i]];
             _released[_payees[i]] = 0;
         }
+        _totalShares = 0;
         _totalReleased = 0;
         if (_erc20TokensWithdrawn.length > 0) {
            for (uint256 i = 0; i < _erc20TokensWithdrawn.length; i++) {
