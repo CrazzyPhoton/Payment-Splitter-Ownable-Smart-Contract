@@ -93,7 +93,7 @@ contract PaymentSplitter is Context, Ownable {
         uint256 numberOfExistingPayees = _payees.length;
         for (uint256 i = 0; i < numberOfExistingPayees; i++) {
             emit PayeeRemoved(_payees[i], _shares[_payees[i]]);
-            delete _shares[_payees[i]];
+            _shares[_payees[i]] = 0;
             _released[_payees[i]] = 0;
         }
         _totalShares = 0;
@@ -147,7 +147,7 @@ contract PaymentSplitter is Context, Ownable {
         }
         if (erc20TokenWithdrawn[token] == false) {
            _erc20TokensWithdrawn.push(token);
-           erc20TokenWithdrawn[token] == true;
+           erc20TokenWithdrawn[token] = true;
         }
     }
 
@@ -164,7 +164,7 @@ contract PaymentSplitter is Context, Ownable {
         }
         if (erc20TokenWithdrawn[token] == false) {
            _erc20TokensWithdrawn.push(token);
-           erc20TokenWithdrawn[token] == true;
+           erc20TokenWithdrawn[token] = true;
         }
     }
 
