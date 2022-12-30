@@ -58,7 +58,7 @@ contract PaymentSplitter is Context, Ownable {
 
     /// @notice External function which is called when receiving ETH to the smart contract.
     receive() external payable virtual {
-        emit PaymentReceived(_msgSender(), msg.value);
+        emit PaymentReceived(msg.sender, msg.value);
     }
 
     // WRITE CONTRACT FUNCTIONS, SMART CONTRACT OWNER ONLY FUNCTIONS //
